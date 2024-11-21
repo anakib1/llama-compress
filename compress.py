@@ -67,30 +67,30 @@ def batched_get_ranks(input_text, model, tokenizer):
     BS = 8
 
     ranks = [input_ids[0][0].cpu().tolist()]
-
+    print(input_ids.shape)
     for i in tqdm(range(0, input_ids.shape[1] - 1, BS)):
         cur_input_ids = []
-        for j in range(i, i + BS):
+        for j in range(i, min(input_ids.shape[1] - 1, i + BS)):
             start_pos = max(0, j - N_TOKENS + 1)
             cur_input_ids.append(input_ids[:, start_pos:j + 1].flatten())
         max_length = max(len(x) for x in cur_input_ids)
-        attention_mask = torch.ones(BS, max_length)
+        attention_mask = torch.ones(len(cur_input_ids), max_length, device=model.device)
         for j, x in enumerate(cur_input_ids):
             attention_mask[j, len(x):] = 0
-        cur_input_ids = [torch.concat([x, torch.zeros(max_length - len(x))]) for x in cur_input_ids]
+        cur_input_ids = [torch.concat([x, torch.zeros(max_length - len(x), device=model.device, dtype=torch.long)]) for x in cur_input_ids]
         cur_input_ids = torch.stack(cur_input_ids)
         with torch.no_grad():
             outputs = model(cur_input_ids, attention_mask=attention_mask)
         logits = outputs.logits
-        for j in range(i, i + BS):
-            next_token_logits = logits[j, i - start_pos, :]
+        for j in range(i, min(input_ids.shape[1] - 1, i + BS)):
+            start_pos = max(0, j - N_TOKENS + 1)
+            next_token_logits = logits[j - i, j - start_pos, :]
             sorted_indices = torch.argsort(next_token_logits, descending=True)
-            actual_token_id = input_ids[j, i + 1]
+            actual_token_id = input_ids[0, j + 1]
             rank = (sorted_indices == actual_token_id).nonzero(as_tuple=True)[0].item()
             ranks.append(rank)
 
     return ranks
-
 
 def compress_ranks(ranks):
     return zlib.compress(pickle.dumps(ranks))
@@ -120,7 +120,7 @@ class LLAmaCompressor(ICompressor):
 
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name,
-            device_map='cuda',
+            device_map='auto',
             torch_dtype="float16"
         )
         self.model.eval()
