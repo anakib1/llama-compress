@@ -54,6 +54,9 @@ def get_ranks_from_text(input_text, model, tokenizer):
     return ranks
 
 
+BS = 8
+
+
 def batched_get_ranks(input_text, model, tokenizer):
     inputs = tokenizer(
         input_text,
@@ -64,8 +67,6 @@ def batched_get_ranks(input_text, model, tokenizer):
         return_token_type_ids=False,
     )
     input_ids = inputs['input_ids'].to(model.device)
-    BS = 8
-
     ranks = [input_ids[0][0].cpu().tolist()]
     print(input_ids.shape)
     for i in tqdm(range(0, input_ids.shape[1] - 1, BS)):
@@ -77,7 +78,8 @@ def batched_get_ranks(input_text, model, tokenizer):
         attention_mask = torch.ones(len(cur_input_ids), max_length, device=model.device)
         for j, x in enumerate(cur_input_ids):
             attention_mask[j, len(x):] = 0
-        cur_input_ids = [torch.concat([x, torch.zeros(max_length - len(x), device=model.device, dtype=torch.long)]) for x in cur_input_ids]
+        cur_input_ids = [torch.concat([x, torch.zeros(max_length - len(x), device=model.device, dtype=torch.long)]) for
+                         x in cur_input_ids]
         cur_input_ids = torch.stack(cur_input_ids)
         with torch.no_grad():
             outputs = model(cur_input_ids, attention_mask=attention_mask)
@@ -91,6 +93,7 @@ def batched_get_ranks(input_text, model, tokenizer):
             ranks.append(rank)
 
     return ranks
+
 
 def compress_ranks(ranks):
     return zlib.compress(pickle.dumps(ranks))
